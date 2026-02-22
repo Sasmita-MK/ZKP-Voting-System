@@ -1,0 +1,7 @@
+{
+  "verifier": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+  "dao": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+  "merkleRoot": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+  "network": "localhost",
+  "timestamp": "2026-01-30T20:10:30.843Z"
+}

@@ -1,0 +1,7 @@
+.sidebar-link {
+  @apply block px-4 py-2 rounded-md cursor-pointer hover:bg-gray-200 transition;
+}
+
+.page-container {
+  @apply p-8 bg-white shadow rounded-lg;
+}
