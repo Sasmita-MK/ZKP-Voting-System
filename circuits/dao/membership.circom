@@ -8,9 +8,6 @@ template DAOMembership(depth) {
     signal input secret;                 // User secret (private)
     signal input pathElements[depth];    // Merkle path elements
     signal input pathIndices[depth];     // Merkle path indices
-    
-    // We don't necessarily need an 'isValid' output for the contract,
-    // the contract just needs to know the proof is valid for 'root'.
 
     // 1. Hash the secret to get the leaf
     component leafHash = Poseidon(1);

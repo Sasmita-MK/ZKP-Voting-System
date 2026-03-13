@@ -5,52 +5,45 @@ import "./Verifier.sol";
 
 contract DAOVoting {
     Groth16Verifier public verifier;
-
-    // DAO Merkle root (membership)
     uint256 public merkleRoot;
+    address public admin;
 
-    // Proposal structure
     struct Proposal {
+        string title;
         string description;
-        uint256 voteCount;
+        uint256 endTime;
         bool exists;
+        // Mapping of Option Index => Vote Count
+        mapping(uint256 => uint256) optionVotes; 
+        uint256 totalVotes;
     }
 
-    // proposalId => Proposal
     mapping(uint256 => Proposal) public proposals;
-
-    // nullifierHash => used or not
     mapping(uint256 => bool) public nullifierUsed;
 
-    event ProposalCreated(uint256 indexed proposalId, string description);
-    event VoteCast(uint256 indexed proposalId, uint256 nullifierHash);
+    event ProposalCreated(uint256 proposalId, string title);
+    event VoteCasted(uint256 proposalId, uint256 optionIndex);
 
     constructor(address _verifier, uint256 _merkleRoot) {
         verifier = Groth16Verifier(_verifier);
         merkleRoot = _merkleRoot;
+        admin = msg.sender;
     }
 
-    // Create a new proposal
-    function createProposal(uint256 proposalId, string calldata description) external {
-        require(!proposals[proposalId].exists, "Proposal already exists");
-
-        proposals[proposalId] = Proposal({
-            description: description,
-            voteCount: 0,
-            exists: true
-        });
-
-        emit ProposalCreated(proposalId, description);
+    function createProposal(uint256 proposalId, string calldata _title, string calldata _description, uint256 _endTime) external {
+        require(msg.sender == admin, "Unauthorized");
+        Proposal storage p = proposals[proposalId];
+        p.title = _title;
+        p.description = _description;
+        p.endTime = _endTime;
+        p.exists = true;
+        emit ProposalCreated(proposalId, _title);
     }
 
-    /**
-     * Vote using ZK proof
-     *
-     * publicSignals[0] = merkleRoot (from circuit)
-     * nullifierHash = off-chain unique identifier
-     */
+    // Added _optionIndex to the parameters
     function vote(
         uint256 proposalId,
+        uint256 _optionIndex,
         uint256[2] calldata a,
         uint256[2][2] calldata b,
         uint256[2] calldata c,
@@ -58,23 +51,19 @@ contract DAOVoting {
         uint256 nullifierHash
     ) external {
         require(proposals[proposalId].exists, "Invalid proposal");
-
-        uint256 root = publicSignals[0];
-
-        require(root == merkleRoot, "Invalid Merkle root");
-        require(!nullifierUsed[nullifierHash], "Vote already cast");
-
-        bool valid = verifier.verifyProof(a, b, c, publicSignals);
-        require(valid, "Invalid ZK proof");
+        require(block.timestamp < proposals[proposalId].endTime, "Closed");
+        require(!nullifierUsed[nullifierHash], "Already voted");
+        require(verifier.verifyProof(a, b, c, publicSignals), "Invalid proof");
 
         nullifierUsed[nullifierHash] = true;
-        proposals[proposalId].voteCount += 1;
+        proposals[proposalId].optionVotes[_optionIndex] += 1;
+        proposals[proposalId].totalVotes += 1;
 
-        emit VoteCast(proposalId, nullifierHash);
+        emit VoteCasted(proposalId, _optionIndex);
     }
 
-    function getVotes(uint256 proposalId) external view returns (uint256) {
-        require(proposals[proposalId].exists, "Invalid proposal");
-        return proposals[proposalId].voteCount;
+    // Helper to get votes for a specific option
+    function getOptionVotes(uint256 proposalId, uint256 optionIndex) external view returns (uint256) {
+        return proposals[proposalId].optionVotes[optionIndex];
     }
 }

@@ -1,63 +1,84 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getContract } from '../constants/contracts';
-import { ethers } from 'ethers';
 
-const CreateProposal = () => {
-    const [id, setId] = useState('');
-    const [description, setDescription] = useState('');
+const CreateProposal = ({ signer }) => {
+    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
+    const [formData, setFormData] = useState({ title: '', description: '', endDate: '', endTime: '' });
+    const [options, setOptions] = useState(['', '']);
 
-   const handleCreate = async () => {
-    if (!id || !description) return alert("Please fill all fields");
+    const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!signer) return alert("Please connect wallet");
+
     setLoading(true);
-
     try {
-        const contract = await getContract();
+        const contract = await getContract(signer);
+        const proposalId = Math.floor(Date.now() / 1000);
         
-        // Match the NEW ABI: (uint256, string)
-        const tx = await contract.createProposal(BigInt(id), description);
+        // Convert UI date/time to Unix Timestamp for Solidity uint256
+        const expiryUnix = Math.floor(new Date(`${formData.endDate}T${formData.endTime}`).getTime() / 1000);
 
-        console.log("Tx Hash:", tx.hash);
-        await tx.wait();
+        // SENDING 4 PARAMETERS NOW:
+        const tx = await contract.createProposal(
+            proposalId,
+            formData.title,
+            formData.description,
+            expiryUnix
+        );
         
-        alert("✅ Proposal Created Successfully!");
+        await tx.wait();
+
+        // Save to LocalStorage (including options for UI rendering)
+        const newProposal = {
+            id: proposalId,
+            ...formData,
+            options: options.filter(opt => opt !== ""),
+            expiryTimestamp: expiryUnix * 1000
+        };
+
+        const existing = JSON.parse(localStorage.getItem("dao_proposals") || "[]");
+        localStorage.setItem("dao_proposals", JSON.stringify([...existing, newProposal]));
+
+        navigate('/');
     } catch (err) {
-        console.error("Trace:", err);
-        alert("Error: " + (err.reason || err.message));
+        console.error(err);
+        alert("Transaction Failed: Are you the Admin?");
     } finally {
         setLoading(false);
     }
 };
     return (
-        <div className="max-w-md mx-auto mt-10 p-6 bg-white shadow rounded-xl border">
-            <h2 className="text-xl font-bold mb-4">Admin: Create Proposal</h2>
-            
-            <label className="block text-sm font-medium mb-1">Proposal ID</label>
-            <input 
-                type="number" 
-                placeholder="e.g. 1" 
-                value={id}
-                className="w-full border p-2 mb-4 rounded"
-                onChange={(e) => setId(e.target.value)}
-            />
-            
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea 
-                placeholder="What is this proposal about?" 
-                value={description}
-                className="w-full border p-2 mb-4 rounded h-32"
-                onChange={(e) => setDescription(e.target.value)}
-            />
-            
-            <button 
-                onClick={handleCreate}
-                className={`w-full py-2 rounded text-white font-bold ${
-                    loading ? "bg-gray-400" : "bg-green-600 hover:bg-green-700"
-                }`}
-                disabled={loading}
-            >
-                {loading ? "Processing..." : "Create Proposal"}
-            </button>
+        <div className="w-full pt-10 pb-20 px-6 flex justify-center">
+            <form onSubmit={handleSubmit} className="w-full max-w-2xl bg-white p-10 rounded-[2.5rem] border-2 border-black shadow-none">
+                <h2 className="text-2xl font-black mb-8 uppercase">Create Proposal</h2>
+                <div className="space-y-6">
+                    <input required placeholder="Proposal Title" className="w-full bg-slate-50 border-2 border-black p-4 rounded-xl font-bold outline-none" onChange={e => setFormData({...formData, title: e.target.value})} />
+                    <textarea required placeholder="Description" className="w-full bg-slate-50 border-2 border-black p-4 rounded-xl font-bold outline-none h-32" onChange={e => setFormData({...formData, description: e.target.value})} />
+                    
+                    <div className="flex gap-4">
+                        <input type="date" required className="flex-1 bg-slate-50 border-2 border-black p-4 rounded-xl font-bold" onChange={e => setFormData({...formData, endDate: e.target.value})} />
+                        <input type="time" required className="flex-1 bg-slate-50 border-2 border-black p-4 rounded-xl font-bold" onChange={e => setFormData({...formData, endTime: e.target.value})} />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-xs font-black uppercase ml-1">Options</label>
+                        {options.map((opt, i) => (
+                            <input key={i} placeholder={`Option ${i+1}`} className="w-full bg-slate-50 border-2 border-black p-3 rounded-xl font-bold outline-none" onChange={e => {
+                                const newOpts = [...options];
+                                newOpts[i] = e.target.value;
+                                setOptions(newOpts);
+                            }} />
+                        ))}
+                        <button type="button" onClick={() => setOptions([...options, ''])} className="text-indigo-600 font-bold text-xs uppercase">+ Add Option</button>
+                    </div>
+
+                    <button disabled={loading} className="w-full bg-blue-700 text-white font-black py-5 rounded-2xl border-2 border-black uppercase tracking-widest">
+                        {loading ? "Publishing to Blockchain..." : "Create Proposal"}
+                    </button>
+                </div>
+            </form>
         </div>
     );
 };

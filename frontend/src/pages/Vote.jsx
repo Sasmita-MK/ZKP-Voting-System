@@ -1,91 +1,94 @@
-/* global BigInt */
-/* eslint-disable no-undef */
-import { useState } from 'react';
-import { generateZKP } from '../utils/zkp';
-import { getContract } from '../constants/contracts';
+import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 
 const Vote = () => {
-    const [secret, setSecret] = useState('');
-    const [proposalId, setProposalId] = useState('0'); // User can choose which proposal to vote on
-    const [status, setStatus] = useState('idle');
+    const { id } = useParams();
+    const navigate = useNavigate();
+    const [proposal, setProposal] = useState(null);
 
-    const handleVote = async () => {
-        if (!secret) return alert("Please enter your secret member key");
-        
-        setStatus('submitting');
-        try {
-            // 1. Generate the ZK Proof and Nullifier off-chain (in browser)
-            const zkp = await generateZKP(secret, proposalId);
-            
-            // 2. Connect to the DAOVoting contract
-            const contract = await getContract();
+    useEffect(() => {
+        const saved = JSON.parse(localStorage.getItem("dao_proposals") || "[]");
+        const found = saved.find(p => p.id === parseInt(id));
+        setProposal(found);
+    }, [id]);
 
-            // 3. Submit to Blockchain: match DAOVoting.sol: vote(id, a, b, c, signals, nullifier)
-            const tx = await contract.vote(
-                BigInt(proposalId),
-                zkp.a,
-                zkp.b,
-                zkp.c,
-                zkp.publicSignals,
-                zkp.nullifierHash
-            );
+    if (!proposal) return null;
 
-            console.log("Transaction pending...", tx.hash);
-            await tx.wait(); // Wait for block confirmation
-            
-            setStatus('success');
-            setSecret(''); // Clear secret for security
-        } catch (err) {
-            console.error("Voting Error:", err);
-            alert("Voting failed! Possible reasons: Wrong secret, already voted, or invalid proposal.");
-            setStatus('idle');
-        }
-    };
+    const isClosed = Date.now() > proposal.expiryTimestamp;
 
     return (
-        <div className="max-w-md mx-auto mt-10 p-6 bg-white shadow-xl rounded-2xl border border-gray-100">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Cast Private Vote</h2>
-            
-            <div className="space-y-4">
-                {/* Proposal Selection */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Select Proposal ID</label>
-                    <input 
-                        type="number"
-                        value={proposalId}
-                        onChange={(e) => setProposalId(e.target.value)}
-                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                    />
+        <div className="w-full pt-4 pb-20 px-4 flex justify-center">
+            {/* Flat card with no shadow as requested */}
+            <div className="w-full max-w-3xl bg-white p-10 rounded-[2.5rem] border-2 border-black shadow-none">
+                
+                {/* Header: Title and Status */}
+                <div className="flex justify-between items-start mb-6">
+                    <h1 className="text-3xl font-black text-black leading-tight">{proposal.title}</h1>
+                    <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase border-2 border-black ${!isClosed ? 'bg-emerald-400 text-black' : 'bg-slate-200 text-slate-500 border-slate-300'}`}>
+                        {!isClosed ? 'Active' : 'Closed'}
+                    </span>
                 </div>
 
-                {/* Secret Input */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700">Your Private Secret</label>
-                    <input 
-                        type="password" 
-                        placeholder="e.g. 33" 
-                        className="mt-1 block w-full border border-gray-300 rounded-md p-2"
-                        value={secret}
-                        onChange={(e) => setSecret(e.target.value)}
-                    />
+                {/* Description Box */}
+                <div className="bg-slate-50 p-6 rounded-2xl border-2 border-black mb-6 text-sm font-bold text-slate-600">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Proposal Overview</label>
+                    {proposal.description}
                 </div>
 
-                {/* Submit Button */}
-                <button 
-                    onClick={handleVote}
-                    disabled={status === 'submitting'}
-                    className={`w-full py-3 px-4 rounded-lg font-bold text-white transition-all ${
-                        status === 'submitting' ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-lg'
-                    }`}
-                >
-                    {status === 'submitting' ? "Generating ZK-Proof..." : "Submit Anonymous Vote"}
-                </button>
-
-                {status === 'success' && (
-                    <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg text-center">
-                        ✅ Vote successfully recorded on-chain!
+                {/* Row Manner: Options and Expiration side-by-side */}
+                <div className="flex flex-col md:flex-row gap-4 mb-10">
+                    {/* Options Row Item */}
+                    <div className="flex-1 p-5 border-2 border-black rounded-2xl bg-white">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Voting Options</label>
+                        <div className="flex flex-wrap gap-2">
+                            {proposal.options.map((opt, i) => (
+                                <span key={i} className="bg-slate-100 text-black border border-black px-3 py-1 rounded-lg text-xs font-bold">
+                                    {opt}
+                                </span>
+                            ))}
+                        </div>
                     </div>
-                )}
+
+                    {/* Expiration Row Item */}
+                    <div className="flex-1 p-5 border-2 border-black rounded-2xl bg-white">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                            {isClosed ? "Expired On" : "Expires On"}
+                        </label>
+                        <p className={`text-sm font-black ${isClosed ? 'text-slate-500' : 'text-red-600'}`}>
+                            {proposal.endDate} <span className="text-black">@</span> {proposal.endTime}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Buttons: Blue 700 */}
+                <div className="flex flex-col space-y-4">
+                    {!isClosed && (
+                        <button 
+                            onClick={() => navigate(`/cast-vote/${id}`)}
+                            className="w-full bg-blue-700 hover:bg-blue-800 text-white font-black py-5 rounded-2xl border-2 border-black uppercase tracking-widest transition-all active:translate-y-1"
+                        >
+                            Vote Now
+                        </button>
+                    )}
+                    <button 
+                        onClick={() => navigate(`/results/${id}`)}
+                        className={`w-full font-black py-5 rounded-2xl border-2 border-black uppercase tracking-widest transition-all active:translate-y-1 ${
+                            isClosed 
+                            ? 'bg-blue-700 text-white hover:bg-blue-800' 
+                            : 'bg-white text-black hover:bg-slate-50'
+                        }`}
+                    >
+                        See Results
+                    </button>
+                </div>
+
+                {/* Footer Back Link */}
+                <button 
+                    onClick={() => navigate('/')}
+                    className="mt-8 w-full text-center text-[10px] font-black uppercase text-slate-400 hover:text-black tracking-tighter"
+                >
+                    ← Back to Dashboard
+                </button>
             </div>
         </div>
     );
